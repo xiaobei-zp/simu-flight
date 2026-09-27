@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>飞机模型检查</title>
+<style>html,body{margin:0;height:100%;background:#dfe8ef;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<script src="three.min.js"></script>
+<script src="js/aircraft-types.js"></script>
+<script src="js/aircraft.js"></script>
+<script>
+/* 只渲染飞机本身：用来近距离检查零件装配，不加载地形/世界。
+   机型：?ac=trainer|aerobatic|jet|glider，视角 ?v=，距离 ?d= */
+var W = window.innerWidth, H = window.innerHeight;
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H);
+document.body.appendChild(renderer.domElement);
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdfe8ef);
+var cam = new THREE.PerspectiveCamera(38, W / H, 0.05, 500);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x666a70, 0.85));
+var d1 = new THREE.DirectionalLight(0xffffff, 1.05); d1.position.set(6, 9, 7); scene.add(d1);
+var d2 = new THREE.DirectionalLight(0xffffff, 0.45); d2.position.set(-7, 4, -6); scene.add(d2);
+scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+var p = new URLSearchParams(location.search);
+var spec = window.SimAircraftTypes ? SimAircraftTypes.get(p.get('ac') || 'trainer') : null;
+var ac = SimAircraft.build({ simple: true, spec: spec });
+scene.add(ac.group);
+
+/* 让操纵面偏转，方便看清它们和母面的关系 */
+var q = new THREE.Quaternion(), ax = new THREE.Vector3(1, 0, 0);
+function def(p, a) { if (p) p.quaternion.copy(p.userData.base).multiply(q.setFromAxisAngle(ax, a)); }
+var s = ac.surfaces;
+def(s.elevator, -0.34); def(s.elevatorL, -0.34);
+def(s.aileronR, -0.42); def(s.aileronL, 0.42);
+def(s.rudder, 0.42);
+
+/* 相机：?v=top|rear|side|three 选角度，?d= 选距离 */
+var view = p.get('v') || 'three';
+var dist = parseFloat(p.get('d') || '13');
+var look = new THREE.Vector3(0, 0.2, 0);
+var pos = {
+  three: [dist * 0.62, dist * 0.42, dist * 0.66],
+  rear: [0, dist * 0.22, dist],
+  top: [0.01, dist, 0.01],
+  side: [dist, dist * 0.18, 0.01],
+  front: [0, dist * 0.2, -dist]
+}[view] || [dist, dist * 0.4, dist];
+if (view === 'tail') {
+  pos = [3.2, 2.6, 6.4];
+  look.set(0, 0.75, 2.1);
+}
+if (view === 'wing') {
+  pos = [3.0, 2.0, 4.6];
+  look.set(3.6, 0.25, 0.5);
+}
+cam.position.set(pos[0], pos[1], pos[2]);
+cam.lookAt(look);
+renderer.render(scene, cam);
+window.__done = true;
+</script>
+</body>
+</html>
