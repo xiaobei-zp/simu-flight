@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞行模拟器 · Flight Simulator</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #05080c;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: #d8e6f0; -webkit-font-smoothing: antialiased;
+  }
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  #gl { z-index: 1; }
+  #hud { z-index: 2; pointer-events: none; }
+
+  /* ---------- 通用面板 ---------- */
+  .panel {
+    position: absolute; z-index: 10; inset: 0;
+    display: none; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 30%, rgba(16,32,52,.86), rgba(3,6,10,.96));
+    backdrop-filter: blur(3px);
+  }
+  .panel.show { display: flex; }
+  .card {
+    width: min(880px, 92vw); max-height: 92vh; overflow: auto;
+    background: linear-gradient(160deg, rgba(16,26,38,.96), rgba(8,14,22,.98));
+    border: 1px solid rgba(125,255,160,.28);
+    border-radius: 14px; padding: 30px 34px;
+    box-shadow: 0 24px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  h1 {
+    margin: 0 0 6px; font-size: 34px; letter-spacing: 6px; font-weight: 700;
+    color: #7dffa0; text-shadow: 0 0 24px rgba(125,255,160,.45);
+  }
+  .sub { color: #6f8698; font-size: 13px; letter-spacing: 2px; margin-bottom: 22px; }
+  h2 {
+    font-size: 13px; letter-spacing: 3px; color: #7dffa0; margin: 22px 0 10px;
+    border-bottom: 1px solid rgba(125,255,160,.18); padding-bottom: 6px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 4px 22px; }
+  .row { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; padding: 3px 0; }
+  kbd {
+    display: inline-block; min-width: 26px; text-align: center;
+    background: rgba(125,255,160,.12); border: 1px solid rgba(125,255,160,.35);
+    border-radius: 5px; padding: 1px 7px; font-family: Consolas, monospace;
+    font-size: 12px; color: #9dffbc; white-space: nowrap;
+  }
+  .row span { color: #a9bccb; }
+  .tip { font-size: 13px; line-height: 1.85; color: #92a8b8; }
+  .tip b { color: #7dffa0; font-weight: 600; }
+  .tip code {
+    background: rgba(125,255,160,.10); padding: 1px 6px; border-radius: 4px;
+    font-family: Consolas, monospace; color: #9dffbc;
+  }
+
+  .btns { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 26px; }
+  button {
+    font-family: inherit; font-size: 14px; cursor: pointer;
+    background: rgba(125,255,160,.10); color: #9dffbc;
+    border: 1px solid rgba(125,255,160,.42); border-radius: 8px;
+    padding: 10px 20px; letter-spacing: 1px; transition: .16s;
+  }
+  button:hover { background: rgba(125,255,160,.22); box-shadow: 0 0 18px rgba(125,255,160,.22); }
+  button.primary {
+    background: linear-gradient(180deg, #7dffa0, #35c46a); color: #04140a;
+    font-weight: 700; border: none; padding: 13px 40px; font-size: 16px; letter-spacing: 3px;
+  }
+  button.primary:hover { box-shadow: 0 0 30px rgba(125,255,160,.55); }
+  .qbtns { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .qbtns button { padding: 9px 14px; font-size: 13px; }
+  .qbtns button.on { background: rgba(125,255,160,.34); color: #04140a; font-weight: 700; }
+  .sep { width: 1px; align-self: stretch; background: rgba(125,255,160,.22); margin: 4px 4px; }
+  .btnrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btnrow button { padding: 8px 15px; font-size: 13px; }
+  .btnrow button.on { background: rgba(125,255,160,.34); color: #04140a; font-weight: 700; }
+  .btnrow .lbl {
+    font-size: 12px; letter-spacing: 2px; color: #6f8698;
+    margin-left: 6px; margin-right: 2px;
+  }
+  .btnrow .lbl:first-child { margin-left: 0; }
+
+  /* ---------- 成绩面板 ---------- */
+  #result .card { text-align: center; width: min(520px, 92vw); }
+  #result h1 { letter-spacing: 4px; }
+  #resultLines {
+    font-family: Consolas, "Microsoft YaHei", monospace;
+    font-size: 16px; line-height: 2.1; color: #cfe6d8; margin: 18px 0 24px;
+  }
+
+  /* ---------- 载入 ---------- */
+  #loading .card { text-align: center; }
+  .track {
+    width: 100%; height: 8px; border-radius: 4px; margin-top: 18px;
+    background: rgba(125,255,160,.10); overflow: hidden;
+  }
+  #bar {
+    width: 0%; height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, #35c46a, #7dffa0);
+    box-shadow: 0 0 16px rgba(125,255,160,.7); transition: width .18s;
+  }
+
+  /* ---------- 崩溃 / 暂停 ---------- */
+  #crash .card { text-align: center; border-color: rgba(255,91,74,.5); }
+  #crash h1 { color: #ff5b4a; text-shadow: 0 0 24px rgba(255,91,74,.5); }
+  #crashReason { font-size: 17px; color: #ffbfb6; margin: 10px 0 22px; }
+  #paused .card { text-align: center; width: min(420px, 90vw); }
+
+  /* ---------- 常驻小提示 ---------- */
+  #hint {
+    position: absolute; z-index: 6; left: 50%; bottom: 42px; transform: translateX(-50%);
+    font-size: 14px; letter-spacing: 1px; padding: 9px 20px; border-radius: 8px;
+    background: rgba(6,14,20,.78); border: 1px solid rgba(125,255,160,.28);
+    color: #9dffbc; opacity: 0; transition: opacity .4s; pointer-events: none;
+    white-space: nowrap;
+  }
+  #corner {
+    position: absolute; z-index: 5; right: 14px; top: 12px;
+    font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.7;
+    color: rgba(125,255,160,.42); text-align: right; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+
+<div id="corner">
+  C 视角 · H 帮助 · V HUD · R 重来<br>
+  P 暂停 · M 静音 · I 反转俯仰<br>
+  K 风况 · N 自由/穿环
+</div>
+
+<div id="hint"></div>
+
+<!-- ================= 致命错误 ================= -->
+<div id="fatal" class="panel show" style="display:none">
+  <div class="card" style="border-color:rgba(255,91,74,.6)">
+    <h1 style="color:#ff5b4a;font-size:24px">运 行 出 错</h1>
+    <div class="tip" id="fatalMsg" style="word-break:break-all;color:#ffbfb6"></div>
+    <div class="tip" style="margin-top:16px">
+      常见原因：浏览器未启用 WebGL，或未通过本地文件直接打开。<br>
+      建议用 Chrome / Edge 打开，或在目录下执行 <code>python -m http.server 8080</code>
+      后访问 <code>http://localhost:8080</code>。
+    </div>
+  </div>
+</div>
+
+<!-- ================= 开始界面 ================= -->
+<div id="start" class="panel show">
+  <div class="card">
+    <h1>飞 行 模 拟 器</h1>
+    <div class="sub">FLIGHT SIMULATOR · 真实气动 · 程序化岛屿 · 全程离线</div>
+
+    <div class="tip">
+      你驾驶一架轻型螺旋桨飞机停在 <b>36 号跑道南端</b>。<br>
+      岛中央是平坦的机场平原，四周 3~5 公里处环绕着山脉，再往外是海。<br>
+      全部地形、跑道、城镇、云层都是<b>实时程序化生成</b>的。
+    </div>
+
+    <h2>操 作</h2>
+    <div class="grid">
+      <div class="row"><kbd>↓</kbd><kbd>S</kbd><span>拉杆 —— 机头向上（爬升）</span></div>
+      <div class="row"><kbd>↑</kbd><kbd>W</kbd><span>推杆 —— 机头向下（俯冲）</span></div>
+      <div class="row"><kbd>←</kbd><kbd>A</kbd><span>向左滚转</span></div>
+      <div class="row"><kbd>→</kbd><kbd>D</kbd><span>向右滚转</span></div>
+      <div class="row"><kbd>Q</kbd><kbd>E</kbd><span>方向舵左 / 右</span></div>
+      <div class="row"><kbd>Shift</kbd><span>加油门（推进到 100%）</span></div>
+      <div class="row"><kbd>Ctrl</kbd><span>收油门</span></div>
+      <div class="row"><kbd>Space</kbd><span>机轮刹车</span></div>
+      <div class="row"><kbd>F</kbd><span>襟翼 0% → 50% → 100%</span></div>
+      <div class="row"><kbd>G</kbd><span>起落架收起 / 放下</span></div>
+      <div class="row"><kbd>C</kbd><span>切换视角（追尾 / 座舱 / 环绕 / 塔台）</span></div>
+      <div class="row"><kbd>H</kbd><span>查看帮助</span></div>
+      <div class="row"><kbd>V</kbd><span>开关平显 HUD</span></div>
+      <div class="row"><kbd>I</kbd><span>反转俯仰轴</span></div>
+      <div class="row"><kbd>R</kbd><span>回到跑道重来</span></div>
+      <div class="row"><kbd>P</kbd><span>暂停 / 继续</span></div>
+    </div>
+
+    <h2>起 飞 要 领</h2>
+    <div class="tip">
+      1. 按住 <code>Shift</code> 把油门推到 100%，沿跑道加速。<br>
+      2. 速度超过 <b>27 m/s</b> 后按住 <code>↓</code> 抬前轮，约 <b>30 m/s</b> 自然离地。<br>
+      3. 离地后收一点杆，用 <b>俯仰控制速度、油门控制高度</b>。<br>
+      4. 转弯要压坡度并带杆，否则会掉高度；失速会有抖振警告。<br>
+      5. 降落：<code>F</code> 放襟翼、<code>G</code> 放起落架，下降率控制在 6 m/s 以内接地。
+    </div>
+
+    <h2>玩 法 · 风 况 · 时 刻</h2>
+    <div class="btnrow">
+      <span class="lbl">玩法</span>
+      <button data-mode="free" class="on">自由飞行</button>
+      <button data-mode="rings">穿环计时</button>
+      <button data-mode="landing">定点着陆</button>
+    </div>
+    <div class="btnrow" style="margin-top:8px">
+      <span class="lbl">风况</span>
+      <button data-wind="calm" class="on">无风</button>
+      <button data-wind="light">微风 5</button>
+      <button data-wind="breezy">有风 9</button>
+      <button data-wind="storm">大风 13</button>
+      <span class="lbl">时刻</span>
+      <button data-hour="6.4" class="on">清晨</button>
+      <button data-hour="12.5">正午</button>
+      <button data-hour="17.9">黄昏</button>
+      <button data-hour="22">夜晚</button>
+    </div>
+    <div class="tip" style="margin-top:10px">
+      <b>穿环计时</b>：12 个圆环绕岛一圈（约 12 km），离地后自动开始计时，最佳成绩会记住。<br>
+      <b>定点着陆</b>：跑道上画了靶心，按「距靶心距离 + 接地率」评分，满分 100。<br>
+      <b>侧风</b>会让机头指向与实际航迹产生<b>偏流</b>（HUD 上有显示），起降都会更难。<br>
+      <b>时刻</b>决定太阳高度与天空配色：黄昏有金色低角度光，夜晚有星空、跑道灯、
+      城市灯火和机载着陆灯。飞行中按 <kbd>T</kbd> 循环切换、<kbd>[</kbd> <kbd>]</kbd> 微调半小时。
+    </div>
+
+    <div class="btns">
+      <button id="btnStart" class="primary">开 始 飞 行</button>
+      <div class="qbtns">
+        <button data-start="ground" class="on">跑道起飞</button>
+        <button data-start="air">空中开始</button>
+        <button data-q="low">低画质</button>
+        <button data-q="medium" class="on">中画质</button>
+        <button data-q="high">高画质</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 载入 ================= -->
+<div id="loading" class="panel">
+  <div class="card">
+    <h1>生 成 世 界</h1>
+    <div class="sub" id="loadText">正在生成地形…</div>
+    <div class="track"><div id="bar"></div></div>
+  </div>
+</div>
+
+<!-- ================= 坠毁 ================= -->
+<div id="crash" class="panel">
+  <div class="card">
+    <h1>坠 毁</h1>
+    <div id="crashReason">—</div>
+    <button id="btnRespawn" class="primary">重 新 起 飞</button>
+  </div>
+</div>
+
+<!-- ================= 成绩 ================= -->
+<div id="result" class="panel">
+  <div class="card">
+    <h1 id="resultTitle">完 成</h1>
+    <div id="resultLines"></div>
+    <div class="btns" style="justify-content:center">
+      <button id="btnResultRetry" class="primary">再 来 一 次</button>
+      <button id="btnResultFree">返回自由飞行</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 暂停 ================= -->
+<div id="paused" class="panel">
+  <div class="card">
+    <h1 style="font-size:26px">已 暂 停</h1>
+    <div class="tip">按 <kbd>P</kbd> 继续飞行</div>
+  </div>
+</div>
+
+<!-- ================= 帮助 ================= -->
+<div id="help" class="panel">
+  <div class="card">
+    <h1>操 作 与 提 示</h1>
+    <div class="sub">CONTROLS &amp; TIPS</div>
+    <div class="grid">
+      <div class="row"><kbd>↓</kbd><kbd>S</kbd><span>拉杆 —— 机头向上</span></div>
+      <div class="row"><kbd>↑</kbd><kbd>W</kbd><span>推杆 —— 机头向下</span></div>
+      <div class="row"><kbd>←</kbd><kbd>→</kbd><span>滚转</span></div>
+      <div class="row"><kbd>Q</kbd><kbd>E</kbd><span>方向舵</span></div>
+      <div class="row"><kbd>Shift</kbd><kbd>Ctrl</kbd><span>油门增减</span></div>
+      <div class="row"><kbd>Space</kbd><span>刹车</span></div>
+      <div class="row"><kbd>F</kbd><span>襟翼</span></div>
+      <div class="row"><kbd>G</kbd><span>起落架</span></div>
+      <div class="row"><kbd>C</kbd><span>切换视角</span></div>
+      <div class="row"><kbd>V</kbd><span>开关 HUD</span></div>
+      <div class="row"><kbd>I</kbd><span>反转俯仰</span></div>
+      <div class="row"><kbd>R</kbd><span>复位到跑道</span></div>
+      <div class="row"><kbd>P</kbd><span>暂停</span></div>
+    </div>
+    <h2>平 显 图 例</h2>
+    <div class="tip">
+      · 中间绿色十字是<b>机头方向</b>，圆圈带小翼的是<b>速度矢量</b>（飞机实际往哪飞）。<br>
+      · 两者重合表示协调飞行；圆圈偏离十字说明在侧滑。<br>
+      · 左侧速度带：红色横线是当前构型的<b>失速速度</b>。<br>
+      · 右侧高度带下方是<b>无线电高度</b>（离地高度）。<br>
+      · 出现 <b style="color:#ff5b4a">失速 STALL</b> 立即推杆减小迎角并加油门。
+    </div>
+    <div class="btns"><button id="btnCloseHelp" class="primary">返 回 飞 行</button></div>
+  </div>
+</div>
+
+<script src="three.min.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/environment.js"></script>
+<script src="js/world.js"></script>
+<script src="js/aircraft.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/sim.js"></script>
+</body>
+</html>
